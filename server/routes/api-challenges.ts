@@ -10,6 +10,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import multer from 'multer';
 import { isAuthenticated } from '../auth';
 import { NotificationService, NotificationEvent, NotificationChannel, NotificationPriority } from '../notificationService';
 import {
@@ -37,6 +38,37 @@ import { challenges, users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 
 const router = Router();
+
+// Multer configuration for evidence file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB per file
+    files: 5 // Maximum 5 files per submission
+  },
+  fileFilter: (req, file, cb) => {
+    // Allow common file types for evidence
+    const allowedMimes = [
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'video/mp4',
+      'video/webm',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+    
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type ${file.mimetype} not allowed`), false);
+    }
+  }
+});
 const notificationService = new NotificationService();
 
 /**
@@ -751,7 +783,7 @@ router.post('/:challengeId/accept-open', isAuthenticated, async (req: Request, r
  * Submit evidence for a P2P challenge
  * Users can submit proof to support their position before or after dispute
  */
-router.post('/:challengeId/evidence', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/:challengeId/evidence', isAuthenticated, upload.array('files', 5), async (req: Request, res: Response) => {
   try {
     const { challengeId } = req.params;
     const userId = req.user?.id;
