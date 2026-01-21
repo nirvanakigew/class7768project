@@ -151,6 +151,12 @@ export default function Notifications() {
       case 'challenge_accepted':
       case 'challenge_active':
         return 'fas fa-swords';
+      case 'points':
+      case 'points.earned':
+      case 'challenge_participated':
+      case 'challenge_won':
+      case 'referral_bonus':
+        return 'fas fa-star';
       case 'event':
       case 'event_starting':
       case 'event_ending':
@@ -185,6 +191,12 @@ export default function Notifications() {
     switch (type) {
       case 'achievement':
         return 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900';
+      case 'points':
+      case 'points.earned':
+      case 'challenge_participated':
+      case 'challenge_won':
+      case 'referral_bonus':
+        return 'text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900';
       case 'challenge':
       case 'challenge_received':
       case 'challenge_sent':
@@ -446,6 +458,24 @@ export default function Notifications() {
                             >
                               <i className="fas fa-wallet mr-1"></i>
                               View Wallet
+                            </Button>
+                          </div>
+                        )}
+
+                        {(notification.type === 'points' || notification.type === 'points.earned' || notification.type === 'challenge_participated' || notification.type === 'challenge_won' || notification.type === 'referral_bonus') && (
+                          <div className="mt-3 flex space-x-2">
+                            <Button
+                              size="sm"
+                              className="bg-yellow-600 text-white hover:bg-yellow-700"
+                              onClick={() => {
+                                if (!notification.read) {
+                                  handleMarkAsRead(notification.id);
+                                }
+                                window.location.href = '/wallet';
+                              }}
+                            >
+                              <i className="fas fa-star mr-1"></i>
+                              View Points
                             </Button>
                           </div>
                         )}

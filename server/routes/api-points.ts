@@ -28,7 +28,12 @@ const router = Router();
 
 /**
  * GET /api/points/balance/:userId
- * Get user's current points balance
+ * Get user's current points balance including weekly claiming status
+ * Returns:
+ *   - balance: Raw balance (in wei, as string)
+ *   - balanceFormatted: Human-readable balance (in BPTS)
+ *   - lastClaimedAt: Timestamp of last weekly claim
+ *   - canClaimThisWeek: Boolean indicating if user can claim now
  */
 router.get('/balance/:userId', isAuthenticated, async (req: Request, res: Response) => {
   try {
@@ -48,6 +53,7 @@ router.get('/balance/:userId', isAuthenticated, async (req: Request, res: Respon
       userId,
       balance: balance.toString(),
       balanceFormatted: (Number(balance) / 1e18).toFixed(2),
+      lastClaimedAt: ledger.length > 0 ? ledger[0].lastClaimedAt : null,
       ...(ledger.length > 0 ? ledger[0] : {}),
     });
   } catch (error: any) {

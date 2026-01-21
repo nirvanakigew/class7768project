@@ -1,6 +1,11 @@
 /**
  * Phase 4: API Routes - Admin Challenge Resolution
  * REST endpoints for admin to resolve challenges and sign transactions
+ * 
+ * Points Distribution (New System):
+ * - Challenge Win: Determined by creator at creation time
+ * - Points awarded on chain via BantahPoints ERC-20 contract
+ * - Weekly claiming enabled on wallet page
  */
 
 import { Router, Request, Response } from 'express';
@@ -16,6 +21,7 @@ import {
   logAdminSignature,
   updateSignatureVerification,
 } from '../blockchain/db-utils';
+import { notifyPointsEarnedWin } from '../utils/bantahPointsNotifications';
 import { db } from '../db';
 import { challenges } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
@@ -26,26 +32,22 @@ const router = Router();
  * POST /api/admin/challenges/resolve
  * Resolve a single challenge on-chain
  * Admin signs with private key to authorize winner and points
+ * 
+ * If pointsAwarded is not provided, uses the points calculated at challenge creation
+ * (based on stake amount: 50 + amount × 5, MAX 500)
  */
 router.post('/resolve', adminAuth, async (req: Request, res: Response) => {
   try {
     const { challengeId, winner, pointsAwarded, reason } = req.body;
 
-    if (!challengeId || !winner || !pointsAwarded) {
+    if (!challengeId || !winner) {
       return res.status(400).json({
-        error: 'Missing required fields: challengeId, winner, pointsAwarded',
-      });
-    }
-
-    if (pointsAwarded < 0) {
-      return res.status(400).json({
-        error: 'Points awarded must be non-negative',
+        error: 'Missing required fields: challengeId, winner',
       });
     }
 
     console.log(`\n👨‍⚖️  Admin resolving challenge ${challengeId}...`);
     console.log(`   Winner: ${winner}`);
-    console.log(`   Points: ${pointsAwarded}`);
 
     // Get challenge
     const dbChallenge = await db
@@ -62,6 +64,17 @@ router.post('/resolve', adminAuth, async (req: Request, res: Response) => {
 
     const challenge = dbChallenge[0];
 
+    // Use provided pointsAwarded or fall back to challenge's pointsAwarded
+    const finalPointsAwarded = pointsAwarded !== undefined ? pointsAwarded : (challenge.pointsAwarded || 0);
+    
+    if (finalPointsAwarded < 0) {
+      return res.status(400).json({
+        error: 'Points awarded must be non-negative',
+      });
+    }
+
+    console.log(`   Points: ${finalPointsAwarded} BPTS`);
+
     // Verify challenge can be resolved
     if (challenge.onChainStatus === 'resolved') {
       return res.status(400).json({
@@ -74,7 +87,7 @@ router.post('/resolve', adminAuth, async (req: Request, res: Response) => {
     const signResult = await resolveChallengeOnChain({
       challengeId,
       winner,
-      pointsAwarded,
+      pointsAwarded: finalPointsAwarded,
     });
 
     // Step 2: Update database
@@ -96,10 +109,18 @@ router.post('/resolve', adminAuth, async (req: Request, res: Response) => {
       userId: winner,
       challengeId,
       transactionType: 'earned_challenge',
-      amount: BigInt(pointsAwarded),
+      amount: BigInt(Math.floor(finalPointsAwarded * 1e18)), // Convert to wei
       reason: reason || `Challenge ${challengeId} win`,
       blockchainTxHash: signResult.transactionHash,
     });
+
+    // Send win notification
+    await notifyPointsEarnedWin(
+      winner,
+      challengeId,
+      finalPointsAwarded,
+      challenge.title || `Challenge #${challengeId}`
+    ).catch(err => console.error('Failed to send win notification:', err));
 
     // Step 4: Log blockchain transaction
     await logBlockchainTransaction({
@@ -115,7 +136,7 @@ router.post('/resolve', adminAuth, async (req: Request, res: Response) => {
       parameters: JSON.stringify({
         challengeId,
         winner,
-        pointsAwarded,
+        pointsAwarded: finalPointsAwarded,
       }),
       status: 'success',
       gasUsed: BigInt(signResult.gasUsed),
@@ -129,7 +150,7 @@ router.post('/resolve', adminAuth, async (req: Request, res: Response) => {
       message: 'Challenge resolved on-chain',
       challengeId,
       winner,
-      pointsAwarded,
+      pointsAwarded: finalPointsAwarded,
       transactionHash: signResult.transactionHash,
       blockNumber: signResult.blockNumber,
       gasUsed: signResult.gasUsed,

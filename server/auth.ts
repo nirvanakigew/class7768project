@@ -8,6 +8,7 @@ import { storage } from "./storage";
 import { User as SelectUser, registerSchema, loginSchema } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import { nanoid } from "nanoid";
+import { notifyReferralBonus } from "./utils/bantahPointsNotifications";
 
 declare global {
   namespace Express {
@@ -168,8 +169,8 @@ export function setupAuth(app: Express) {
 
       // Process referral rewards if applicable
       if (referrerUser) {
-        // Give referrer bonus - 500 Bantah Points for referring someone
-        const referrerBonus = 500; // Bantah Points for referring someone
+        // Give referrer bonus - 200 Bantah Points (new system) for successful referral
+        const referrerBonus = 200; // Bantah Points for successful referral (one-time per user)
 
         await storage.updateUserPoints(referrerUser.id, referrerBonus);
 
@@ -181,7 +182,14 @@ export function setupAuth(app: Express) {
           status: 'active',
         });
 
-        // Notify referrer
+        // Notify referrer via push notification
+        await notifyReferralBonus(
+          referrerUser.id,
+          user.firstName || 'New User',
+          referrerBonus
+        ).catch(err => console.error('Failed to send referral notification:', err));
+
+        // Also create in-app notification (for backup)
         await storage.createNotification({
           userId: referrerUser.id,
           type: 'referral_success',
@@ -195,7 +203,7 @@ export function setupAuth(app: Express) {
           userId: referrerUser.id,
           type: 'referral_reward',
           amount: referrerBonus.toString(),
-          description: `Referral bonus - ${referrerBonus} Bantah Points for ${user.firstName} joining`,
+          description: `Referral bonus - ${referrerBonus} Bantah Points for ${user.firstName} joining (one-time)`,
           status: 'completed',
         });
       }

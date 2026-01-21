@@ -1,6 +1,12 @@
 /**
  * Phase 4: API Routes - Challenge Operations
  * REST endpoints for challenge creation, joining, and management
+ * 
+ * Points Distribution (New System):
+ * - Challenge Creation: 50 + (Amount × 5) = MAX 500 pts
+ * - Challenge Joining: 10 + (Amount × 4) = MAX 500 pts
+ * - Referral: 200 pts (one-time per user)
+ * - Weekly claiming enabled
  */
 
 import { Router, Request, Response } from 'express';
@@ -24,6 +30,8 @@ import {
   addUserWallet,
   getUserPrimaryWallet,
 } from '../blockchain/db-utils';
+import { calculateCreationPoints, calculateParticipationPoints } from '../utils/points-calculator';
+import { notifyPointsEarnedParticipation, notifyPointsEarnedCreation } from '../utils/bantahPointsNotifications';
 import { db } from '../db';
 import { challenges, users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
@@ -82,6 +90,11 @@ router.post('/create-admin', isAuthenticated, async (req: Request, res: Response
 
     console.log(`\n💾 Creating admin challenge from ${userId}...`);
 
+    // Calculate creation points based on stake amount (50 + amount × 5, MAX 500)
+    const stakeAmountUSD = parseInt(stakeAmount); // USDC/USDT amounts are in USD equivalent
+    const creationPoints = Math.min(50 + (stakeAmountUSD * 5), 500);
+    console.log(`🎁 Challenge creator will earn ${creationPoints} Bantah Points`);
+
     // Create challenge in database first
     const dbChallenge = await db
       .insert(challenges)
@@ -96,6 +109,7 @@ router.post('/create-admin', isAuthenticated, async (req: Request, res: Response
         paymentTokenAddress: paymentToken,
         stakeAmountWei: BigInt(stakeAmount + '000000'), // 6 decimals for USDC/USDT
         onChainStatus: 'pending',
+        pointsAwarded: creationPoints, // Store creation points for winner to earn
       })
       .returning();
 
@@ -169,6 +183,11 @@ router.post('/create-p2p', isAuthenticated, async (req: Request, res: Response) 
 
     console.log(`\n💾 Creating P2P challenge: ${userId} vs ${opponentId}...`);
 
+    // Calculate creation points based on stake amount (50 + amount × 5, MAX 500)
+    const stakeAmountUSD = parseInt(stakeAmount); // USDC/USDT amounts are in USD equivalent
+    const creationPoints = Math.min(50 + (stakeAmountUSD * 5), 500);
+    console.log(`🎁 Challenge creator will earn ${creationPoints} Bantah Points`);
+
     // Create in database with pending blockchain status
     // User will sign and submit transaction client-side
     const dbChallenge = await db
@@ -185,6 +204,7 @@ router.post('/create-p2p', isAuthenticated, async (req: Request, res: Response) 
         paymentTokenAddress: paymentToken,
         stakeAmountWei: BigInt(ethers.parseUnits(stakeAmount, 6).toString()),
         onChainStatus: 'pending', // Waiting for user to sign and submit
+        pointsAwarded: creationPoints, // Store creation points for winner to earn
       })
       .returning();
 
@@ -271,6 +291,11 @@ router.post('/:id/join', isAuthenticated, async (req: Request, res: Response) =>
 
     const challenge = dbChallenge[0];
 
+    // Calculate participation points based on stake amount (10 + amount × 4, MAX 500)
+    const stakeAmountUSD = challenge.stakeAmountWei ? Number(challenge.stakeAmountWei) / 1e6 : 0; // Convert from wei to USD
+    const participationPoints = Math.min(10 + (stakeAmountUSD * 4), 500);
+    console.log(`🎁 Challenge participant will earn ${participationPoints} Bantah Points`);
+
     // Get on-chain challenge
     const onChainChallenge = await getChallenge(challengeId);
 
@@ -292,6 +317,31 @@ router.post('/:id/join', isAuthenticated, async (req: Request, res: Response) =>
         side: side ? 'YES' : 'NO',
         lockTxHash: txResult.transactionHash,
       });
+    }
+
+    // Award participation points to the joining user
+    try {
+      const pointsInWei = BigInt(Math.floor(participationPoints * 1e18));
+      await recordPointsTransaction({
+        userId,
+        challengeId,
+        transactionType: 'challenge_joined',
+        amount: pointsInWei,
+        reason: `Participated in challenge #${challengeId}`,
+        blockchainTxHash: txResult.transactionHash,
+      });
+      console.log(`✅ Awarded ${participationPoints} points to user ${userId} for joining challenge`);
+      
+      // Send notification
+      await notifyPointsEarnedParticipation(
+        userId,
+        challengeId,
+        participationPoints,
+        challenge.title || `Challenge #${challengeId}`
+      ).catch(err => console.error('Failed to send participation points notification:', err));
+    } catch (pointsError) {
+      console.error('Failed to record participation points:', pointsError);
+      // Don't fail the entire request if points recording fails
     }
 
     console.log(`✅ User joined challenge: ${txResult.transactionHash}`);

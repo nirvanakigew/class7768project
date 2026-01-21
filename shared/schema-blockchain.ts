@@ -73,6 +73,8 @@ export const userPointsLedgers = pgTable(
     totalPointsEarned: bigint("total_points_earned", { mode: "number" }).default(0),
     totalPointsBurned: bigint("total_points_burned", { mode: "number" }).default(0),
     pointsLockedInEscrow: bigint("points_locked_in_escrow", { mode: "number" }).default(0),
+    // Weekly Claiming System
+    lastClaimedAt: timestamp("last_claimed_at"), // Last timestamp when user claimed points
     chainSyncedAt: timestamp("chain_synced_at"),
     lastUpdatedAt: timestamp("last_updated_at").defaultNow(),
     createdAt: timestamp("created_at").defaultNow(),

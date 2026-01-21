@@ -16,7 +16,7 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, formatDistanceToNowStrict } from "date-fns";
 // Token-friendly formatting helper (no fiat symbols)
 import { PlayfulLoading } from "@/components/ui/playful-loading";
 import { getBalances } from "@/lib/contractInteractions";
@@ -50,6 +50,40 @@ export default function WalletPage() {
   const [claimableChallenges, setClaimableChallenges] = useState<any[]>([]);
   const [claiming, setClaiming] = useState<boolean>(false);
   const [chartDays, setChartDays] = useState<7 | 30>(7);
+
+  // Helper function to calculate if user can claim points this week
+  const canClaimPointsThisWeek = (lastClaimedAt: string | null): boolean => {
+    if (!lastClaimedAt) return true; // Never claimed, can claim now
+    
+    const lastClaim = new Date(lastClaimedAt);
+    const now = new Date();
+    
+    // Get current week's Sunday
+    const currentSunday = new Date(now);
+    currentSunday.setDate(now.getDate() - now.getDay()); // Sunday of current week
+    currentSunday.setHours(0, 0, 0, 0);
+    
+    // Check if last claim was in a previous week
+    return lastClaim < currentSunday;
+  };
+
+  // Helper function to get next claim time
+  const getNextClaimTime = (lastClaimedAt: string | null): Date => {
+    const now = new Date();
+    
+    if (!lastClaimedAt) {
+      // Never claimed, can claim on next Sunday
+      const nextSunday = new Date(now);
+      nextSunday.setDate(now.getDate() + (7 - now.getDay())); // Next Sunday
+      nextSunday.setHours(0, 0, 0, 0);
+      return nextSunday;
+    }
+    
+    const lastClaim = new Date(lastClaimedAt);
+    const nextClaimSunday = new Date(lastClaim);
+    nextClaimSunday.setDate(lastClaim.getDate() + 7); // 7 days after last claim
+    return nextClaimSunday;
+  };
 
   // Fetch ETH price in USD
   const { data: ethPrice } = useQuery({
@@ -395,6 +429,22 @@ export default function WalletPage() {
             <div className="space-y-0.5">
               <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Bantah Points</p>
               <h3 className="text-sm sm:text-xl font-bold text-amber-900 dark:text-amber-100">{currentPointsDisplay}</h3>
+              {/* Weekly Claiming Status */}
+              <div className="mt-2 pt-2 border-t border-amber-200 dark:border-amber-800/50">
+                {canClaimPointsThisWeek(pointsData?.lastClaimedAt) ? (
+                  <div className="flex items-center gap-1">
+                    <Check className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                    <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Ready to claim</p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-amber-500 dark:text-amber-500" />
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      Next claim: {formatDistanceToNowStrict(getNextClaimTime(pointsData?.lastClaimedAt), { addSuffix: true })}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

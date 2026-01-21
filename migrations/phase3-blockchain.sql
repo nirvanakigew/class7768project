@@ -249,6 +249,10 @@ CREATE INDEX IF NOT EXISTS idx_wallet_user_chain ON user_wallet_addresses(user_i
 -- ============================================================================
 
 -- Challenges awaiting resolution
+-- NOTE: This view requires the challenges table to have the following columns:
+-- id, title, description, status, on_chain_status, challenger, challenged, amount, created_at, due_date
+-- If table doesn't have all columns, comment out this view and run after migrations are complete
+/*
 CREATE OR REPLACE VIEW v_challenges_pending_resolution AS
 SELECT 
   c.id,
@@ -268,6 +272,7 @@ LEFT JOIN pair_queue p ON c.id = p.challenge_id
 WHERE c.on_chain_status = 'active' OR c.status = 'pending_admin_resolution'
 GROUP BY c.id
 ORDER BY c.created_at DESC;
+*/
 
 -- User points summary
 CREATE OR REPLACE VIEW v_user_points_summary AS
