@@ -107,6 +107,8 @@ export function ChallengeCard({
   const [, navigate] = useLocation();
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showAcceptModal, setShowAcceptModal] = useState(false);
+  const [isAccepting, setIsAccepting] = useState(false);
 
   const handleAvatarClick = (e: React.MouseEvent, profileId: string | undefined) => {
     if (challenge.adminCreated || !profileId) return;
@@ -235,6 +237,27 @@ export function ChallengeCard({
       toast({
         title: "Error",
         description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const acceptOpenChallengeMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", `/api/challenges/${challenge.id}/accept-open`);
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "✓ Challenge Accepted!",
+        description: "You're in! Both stakes are now locked on-chain.",
+      });
+      setShowAcceptModal(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/challenges"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "❌ Error",
+        description: error.message || "Failed to accept challenge. Someone may have accepted it first!",
         variant: "destructive",
       });
     },
@@ -435,9 +458,32 @@ export function ChallengeCard({
           <div className="flex items-center gap-0.5 flex-shrink-0 flex-wrap">
             <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5">
               {challenge.status === "open" && (
-                <Badge className={isNewChallenge ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-none text-[10px] px-2 py-0.5" : "bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300 border-none text-[10px] px-2 py-0.5"}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!isAuthenticated) {
+                      toast({
+                        title: "Authentication Required",
+                        description: "Please log in to accept challenges",
+                      });
+                      login();
+                      return;
+                    }
+                    if (user?.id === challenge.challenger) {
+                      toast({
+                        title: "Cannot Accept",
+                        description: "You cannot accept your own challenge",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    setShowAcceptModal(true);
+                  }}
+                  disabled={!isAuthenticated || user?.id === challenge.challenger}
+                  className={`${isNewChallenge ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300" : "bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300"} border-none text-[10px] px-2 py-0.5 rounded-md font-semibold transition-all cursor-pointer hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
                   {isNewChallenge ? "New" : "Open"}
-                </Badge>
+                </button>
               )}
               {challenge.status !== "open" && getStatusBadge(challenge.status)}
               {!challenge.adminCreated && (
@@ -651,6 +697,74 @@ export function ChallengeCard({
           onClose={() => setShowProfileModal(false)}
         />
       )}
+
+      {/* Accept Open Challenge Modal */}
+      <Dialog open={showAcceptModal} onOpenChange={setShowAcceptModal}>
+        <DialogContent className="sm:max-w-sm max-w-[90vw]">
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                Accept Challenge?
+              </h2>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                Join {challenge.challengerUser?.username || "this challenger"}'s open challenge
+              </p>
+            </div>
+
+            {/* Challenge Details */}
+            <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-3 space-y-2">
+              <div className="flex justify-between items-start">
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Title:</span>
+                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100 text-right">{challenge.title}</span>
+              </div>
+              <div className="flex justify-between items-start">
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Category:</span>
+                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  <CategoryIcon category={challenge.category} /> {challenge.category}
+                </span>
+              </div>
+              <div className="flex justify-between items-start">
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Stake:</span>
+                <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                  ₦{(parseFloat(String(challenge.amount)) || 0).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between items-start">
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Total Pool:</span>
+                <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                  ₦{(parseFloat(String(challenge.amount)) * 2 || 0).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            {/* Info */}
+            <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+              <p className="text-xs text-blue-800 dark:text-blue-300">
+                ✓ Your stake will be locked on the blockchain immediately
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowAcceptModal(false)}
+                className="flex-1"
+                disabled={acceptOpenChallengeMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => acceptOpenChallengeMutation.mutate()}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                disabled={acceptOpenChallengeMutation.isPending}
+              >
+                {acceptOpenChallengeMutation.isPending ? "Accepting..." : "⚔️ Accept Challenge"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

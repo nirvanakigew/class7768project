@@ -6,13 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Send, Upload, AlertCircle, Clock, Shield, MessageCircle, Users } from "lucide-react";
+import { Send, Upload, AlertCircle, Clock, Shield, MessageCircle, Users, FileUp } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { pusher } from "@/lib/pusher";
 import { TypingIndicator } from "@/components/TypingIndicator";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { EvidenceUpload } from "@/components/EvidenceUpload";
 
 interface Challenge {
   id: number;
@@ -67,6 +68,7 @@ export function ChallengeChat({ challenge, onClose }: ChallengeChatProps) {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState("");
   const [showDispute, setShowDispute] = useState(false);
+  const [showEvidenceUpload, setShowEvidenceUpload] = useState(false);
   const [timeLeft, setTimeLeft] = useState<string>("");
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -284,15 +286,27 @@ export function ChallengeChat({ challenge, onClose }: ChallengeChatProps) {
           </div>
 
           {isActive && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowDispute(true)}
-              className="text-red-600 border-red-600 hover:bg-red-50"
-            >
-              <AlertCircle className="w-4 h-4 mr-1" />
-              Dispute
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowEvidenceUpload(true)}
+                className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                title="Submit evidence to support your position"
+              >
+                <FileUp className="w-4 h-4 mr-1" />
+                Evidence
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDispute(true)}
+                className="text-red-600 border-red-600 hover:bg-red-50"
+              >
+                <AlertCircle className="w-4 h-4 mr-1" />
+                Dispute
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -447,6 +461,20 @@ export function ChallengeChat({ challenge, onClose }: ChallengeChatProps) {
         </div>
       </DialogContent>
     </Dialog>
+
+      {/* Evidence Upload Dialog */}
+      <EvidenceUpload
+        challengeId={challenge.id}
+        open={showEvidenceUpload}
+        onOpenChange={setShowEvidenceUpload}
+        onSuccess={() => {
+          toast({
+            title: "✅ Evidence Submitted",
+            description: "Your evidence has been submitted. Admin will review it soon.",
+          });
+          queryClient.invalidateQueries({ queryKey: [`/api/challenges/${challenge.id}`] });
+        }}
+      />
   </div>
 );
 }

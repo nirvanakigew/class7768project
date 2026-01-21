@@ -573,4 +573,330 @@ router.get('/user/:userId', isAuthenticated, async (req: Request, res: Response)
   }
 });
 
+/**
+ * POST /api/challenges/:challengeId/accept-open
+ * Accept an open P2P challenge (first user to join becomes opponent)
+ * Calls blockchain: joinOpenP2PChallenge()
+ */
+router.post('/:challengeId/accept-open', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { challengeId } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    console.log(`\n⚔️ User ${userId} accepting open challenge ${challengeId}...`);
+
+    // Get challenge from database
+    const dbChallenge = await db
+      .select()
+      .from(challenges)
+      .where(eq(challenges.id, parseInt(challengeId)))
+      .limit(1);
+
+    if (!dbChallenge.length) {
+      return res.status(404).json({ error: 'Challenge not found' });
+    }
+
+    const challenge = dbChallenge[0];
+
+    // Validate challenge is open and waiting for opponent
+    if (challenge.status !== 'open') {
+      return res.status(400).json({
+        error: `Challenge is not open. Current status: ${challenge.status}`,
+      });
+    }
+
+    if (challenge.challenged !== null) {
+      return res.status(400).json({
+        error: 'Challenge has already been accepted by someone else',
+      });
+    }
+
+    // Validate user is not the creator
+    if (challenge.challenger === userId) {
+      return res.status(403).json({
+        error: 'You cannot accept your own challenge',
+      });
+    }
+
+    console.log(`✅ Challenge validation passed. Calling blockchain...`);
+
+    // Step 1: Call blockchain to accept open challenge
+    // This transfers acceptor's stake to escrow and activates the challenge
+    const txResult = await acceptP2PChallenge(
+      parseInt(challengeId),
+      req.user as any
+    );
+
+    console.log(`✅ Blockchain transaction successful: ${txResult.transactionHash}`);
+
+    // Step 2: Update database with acceptor info
+    await db
+      .update(challenges)
+      .set({
+        challenged: userId,
+        status: 'active',
+        acceptorTransactionHash: txResult.transactionHash,
+      })
+      .where(eq(challenges.id, parseInt(challengeId)));
+
+    console.log(`✅ Database updated - challenge now ACTIVE`);
+
+    // Step 3: Get the creator for notifications
+    const creator = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, challenge.challenger!))
+      .limit(1);
+
+    const acceptor = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    const creatorName = creator[0]?.firstName || 'Someone';
+    const acceptorName = acceptor[0]?.firstName || 'Someone';
+
+    // Step 4: Send notifications
+    console.log(`📬 Sending notifications...`);
+
+    // Notify creator that someone accepted their challenge
+    await notificationService.sendNotification({
+      userId: challenge.challenger!,
+      event: NotificationEvent.NEW_CHALLENGE_ACCEPTED,
+      title: '⚔️ Challenge Accepted!',
+      message: `${acceptorName} accepted your challenge! The battle begins now.`,
+      metadata: {
+        challengeId: parseInt(challengeId),
+        challengeTitle: challenge.title,
+        acceptorId: userId,
+        acceptorName: acceptorName,
+        stakeAmount: challenge.amount,
+      },
+      channels: [NotificationChannel.PUSHER, NotificationChannel.FIREBASE],
+      priority: NotificationPriority.HIGH,
+    }).catch(err => {
+      console.warn('⚠️ Notification to creator failed (non-blocking):', err.message);
+    });
+
+    // Notify acceptor that they joined the challenge
+    await notificationService.sendNotification({
+      userId: userId,
+      event: NotificationEvent.NEW_CHALLENGE_ACCEPTED,
+      title: '✓ Challenge Accepted!',
+      message: `You've accepted ${creatorName}'s challenge! Stakes are now locked on-chain. May the best predictor win!`,
+      metadata: {
+        challengeId: parseInt(challengeId),
+        challengeTitle: challenge.title,
+        creatorId: challenge.challenger,
+        creatorName: creatorName,
+        stakeAmount: challenge.amount,
+        totalPool: challenge.amount * 2,
+      },
+      channels: [NotificationChannel.PUSHER, NotificationChannel.FIREBASE],
+      priority: NotificationPriority.HIGH,
+    }).catch(err => {
+      console.warn('⚠️ Notification to acceptor failed (non-blocking):', err.message);
+    });
+
+    console.log(`✅ Notifications sent successfully`);
+
+    // Step 5: Return success response
+    res.json({
+      success: true,
+      challengeId: parseInt(challengeId),
+      transactionHash: txResult.transactionHash,
+      blockNumber: txResult.blockNumber,
+      status: 'active',
+      title: challenge.title,
+      challenger: challenge.challenger,
+      challenged: userId,
+      stakeAmount: challenge.amount,
+      totalPool: challenge.amount * 2,
+      message: `Challenge accepted! Both stakes are now locked on-chain.`,
+    });
+
+  } catch (error: any) {
+    console.error('❌ Failed to accept open challenge:', error);
+    
+    // Determine error type
+    let errorMessage = error.message || 'Failed to accept challenge';
+    let statusCode = 500;
+
+    if (error.message?.includes('already accepted')) {
+      errorMessage = 'This challenge has already been accepted by someone else';
+      statusCode = 409;
+    } else if (error.message?.includes('Challenge not open')) {
+      errorMessage = 'This challenge is no longer open';
+      statusCode = 400;
+    } else if (error.message?.includes('insufficient')) {
+      errorMessage = 'Insufficient USDC balance to accept this challenge';
+      statusCode = 400;
+    }
+
+    res.status(statusCode).json({
+      error: 'Challenge acceptance failed',
+      message: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+    });
+  }
+});
+
+/**
+ * POST /api/challenges/:challengeId/evidence
+ * Submit evidence for a P2P challenge
+ * Users can submit proof to support their position before or after dispute
+ */
+router.post('/:challengeId/evidence', isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { challengeId } = req.params;
+    const userId = req.user?.id;
+    const { description, type } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    if (!description || !description.trim()) {
+      return res.status(400).json({ error: 'Evidence description is required' });
+    }
+
+    const id = parseInt(challengeId);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: 'Invalid challenge ID' });
+    }
+
+    console.log(`\n📸 User ${userId} submitting evidence for challenge ${id}...`);
+
+    // Get challenge
+    const dbChallenge = await db
+      .select()
+      .from(challenges)
+      .where(eq(challenges.id, id))
+      .limit(1);
+
+    if (!dbChallenge.length) {
+      return res.status(404).json({ error: 'Challenge not found' });
+    }
+
+    const challenge = dbChallenge[0];
+
+    // Verify user is participant
+    if (challenge.challenger !== userId && challenge.challenged !== userId) {
+      return res.status(403).json({ error: 'You are not a participant in this challenge' });
+    }
+
+    // Challenge must be active or completed (can submit evidence before or after)
+    if (!['active', 'completed', 'disputed'].includes(challenge.status)) {
+      return res.status(400).json({
+        error: 'Cannot submit evidence for this challenge',
+        currentStatus: challenge.status,
+      });
+    }
+
+    // Collect file data
+    const files = req.files as Express.Multer.File[] | undefined;
+    const fileCount = files ? files.length : 0;
+
+    if (fileCount === 0) {
+      return res.status(400).json({ error: 'At least one file is required' });
+    }
+
+    if (fileCount > 5) {
+      return res.status(400).json({ error: 'Maximum 5 files allowed' });
+    }
+
+    // Create evidence object
+    const evidenceData = {
+      submittedBy: userId,
+      submittedAt: new Date().toISOString(),
+      description: description.trim(),
+      type: type || 'p2p_evidence',
+      files: files?.map((f) => ({
+        originalName: f.originalname,
+        mimeType: f.mimetype,
+        size: f.size,
+        buffer: f.buffer.toString('base64'), // Store as base64
+        fieldname: f.fieldname,
+      })) || [],
+    };
+
+    // Update challenge with evidence
+    await db
+      .update(challenges)
+      .set({
+        evidence: evidenceData,
+      })
+      .where(eq(challenges.id, id));
+
+    console.log(`✅ Evidence submitted for challenge ${id}`);
+    console.log(`   Files: ${fileCount}`);
+    console.log(`   Description: ${description.substring(0, 50)}...`);
+
+    // Notify admins about evidence submission
+    await notificationService
+      .sendNotification({
+        type: NotificationEvent.EVIDENCE_SUBMITTED,
+        userId: 'admin', // Target admins
+        title: `📸 Evidence Submitted - Challenge #${id}`,
+        message: `${challenge.challengerUser?.firstName || challenge.challenger} submitted evidence for "${challenge.title}"`,
+        data: {
+          challengeId: id,
+          submittedBy: userId,
+          submittedByName: challenge.challenger === userId ? challenge.challengerUser?.firstName : challenge.challengedUser?.firstName,
+          challengeTitle: challenge.title,
+          fileCount,
+        },
+        channels: [NotificationChannel.PUSHER, NotificationChannel.FIREBASE],
+        priority: NotificationPriority.HIGH,
+      })
+      .catch((err) => {
+        console.warn('⚠️  Failed to notify admin about evidence submission:', err.message);
+      });
+
+    // Also notify the other participant
+    const otherUserId = challenge.challenger === userId ? challenge.challenged : challenge.challenger;
+    if (otherUserId) {
+      await notificationService
+        .sendNotification({
+          type: NotificationEvent.CHALLENGE_UPDATE,
+          userId: otherUserId,
+          title: 'Evidence Submitted',
+          message: 'Your opponent submitted evidence for this challenge. An admin will review it.',
+          data: {
+            challengeId: id,
+            challengeTitle: challenge.title,
+          },
+          channels: [NotificationChannel.PUSHER],
+          priority: NotificationPriority.MEDIUM,
+        })
+        .catch((err) => {
+          console.warn('⚠️  Failed to notify other participant:', err.message);
+        });
+    }
+
+    res.json({
+      success: true,
+      challengeId: id,
+      message: 'Evidence submitted successfully',
+      evidenceData: {
+        submittedBy: userId,
+        submittedAt: evidenceData.submittedAt,
+        description: description.trim(),
+        fileCount,
+      },
+    });
+  } catch (error: any) {
+    console.error('❌ Failed to submit evidence:', error);
+    res.status(500).json({
+      error: 'Failed to submit evidence',
+      message: error.message,
+    });
+  }
+});
+
 export default router;

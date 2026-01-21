@@ -3,7 +3,7 @@
  * Sends notifications for all points-related events
  */
 
-import { notificationService, NotificationEvent, NotificationChannel, NotificationPriority } from './notificationService';
+import { notificationService, NotificationEvent, NotificationChannel, NotificationPriority } from '../notificationService';
 
 /**
  * Notify user when they earn points from challenge creation

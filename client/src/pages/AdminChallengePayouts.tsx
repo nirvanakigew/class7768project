@@ -46,7 +46,7 @@ interface Challenge {
   amount: string;
   status: 'pending' | 'active' | 'completed' | 'disputed' | 'cancelled' | 'open';
   evidence: any;
-  result: 'challenger_won' | 'challenged_won' | 'draw' | null;
+  result: 'challenger_won' | 'challenged_won' | 'draw' | 'yes_won' | 'no_won' | null;
   dueDate: string;
   createdAt: string;
   completedAt: string | null;
@@ -132,20 +132,63 @@ export default function AdminChallengePayouts() {
     },
   });
 
+  // Get result text for display
+  const getResultText = (result: string | null, challenge: Challenge): string => {
+    if (!result) return '';
+    if (challenge.adminCreated) {
+      if (result === 'yes_won') return 'YES Side Wins';
+      if (result === 'no_won') return 'NO Side Wins';
+    } else {
+      if (result === 'challenger_won') return `${challenge.challengerUser?.username || 'Challenger'} Wins`;
+      if (result === 'challenged_won') return `${challenge.challengedUser?.username || 'Challenged'} Wins`;
+    }
+    return 'Draw';
+  };
+
+  // Get challenge type badge
+  const getChallengeTypeBadge = (challenge: Challenge) => {
+    if (challenge.adminCreated) {
+      return (
+        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-500/20 text-purple-400 border border-purple-500/30">
+          🏊 Admin Pool
+        </span>
+      );
+    } else {
+      return (
+        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+          ⚔️ P2P Duel
+        </span>
+      );
+    }
+  };
+
   const handleSetResult = (challengeId: number, result: string) => {
     const challenge = challenges.find((c: Challenge) => c.id === challengeId);
     if (!challenge) return;
 
-    const resultText = result === 'challenger_won' ? 'Challenger Wins' : 
-                      result === 'challenged_won' ? 'Challenged Wins' : 'Draw';
+    let confirmMessage = '';
+    
+    if (challenge.adminCreated) {
+      // Admin-created challenge - on-chain settlement
+      const totalPool = challenge.yesStakeTotal + challenge.noStakeTotal;
+      
+      if (result === 'draw') {
+        confirmMessage = `⛓️  Resolve on-chain as DRAW\n\nTotal pool: ${totalPool.toLocaleString()} coins\nAll participants get stakes refunded\n\nThis will be signed and posted to Base Sepolia blockchain.`;
+      } else {
+        const winnerSide = result === 'yes_won' ? 'YES' : 'NO';
+        confirmMessage = `⛓️  Declare ${winnerSide} side winner on-chain\n\nTotal pool: ${totalPool.toLocaleString()} coins\nWinner pool: ${(totalPool * 0.95).toLocaleString()} coins (95% after fees)\n\nThis will be signed and posted to Base Sepolia blockchain.`;
+      }
+    } else {
+      // P2P challenge - on-chain settlement
+      const amount = parseInt(challenge.amount) || 0;
+      const resultText = getResultText(result, challenge);
 
-    const totalAmount = parseFloat(challenge.amount) * 2;
-    const platformFee = totalAmount * 0.05;
-    const winnerPayout = totalAmount - platformFee;
-
-    const confirmMessage = result === 'draw' 
-      ? `Set challenge result to DRAW? Both participants will receive their stakes back (₦${challenge.amount} each).`
-      : `Set challenge result to ${resultText}? Winner will receive ₦${winnerPayout.toLocaleString()}, platform fee: ₦${platformFee.toLocaleString()}`;
+      if (result === 'draw') {
+        confirmMessage = `⛓️  Resolve on-chain as DRAW\n\nBoth participants: ${amount.toLocaleString()} coins each refunded\n\nThis will be signed and posted to Base Sepolia blockchain.`;
+      } else {
+        confirmMessage = `⛓️  ${resultText} on-chain\n\nWinner receives: ${(amount * 2 * 0.95).toLocaleString()} coins (95% after fees)\nPlatform fee: ${(amount * 2 * 0.05).toLocaleString()} coins (5%)\n\nThis will be signed and posted to Base Sepolia blockchain.`;
+      }
+    }
 
     if (confirm(confirmMessage)) {
       setResultMutation.mutate({ challengeId, result });
@@ -429,45 +472,88 @@ export default function AdminChallengePayouts() {
                 <div key={challenge.id} className="bg-slate-800 rounded-lg p-4">
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="flex-1">
-                      <h3 className="font-semibold text-white">{challenge.title}</h3>
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="font-semibold text-white">{challenge.title}</h3>
+                        {getChallengeTypeBadge(challenge)}
+                      </div>
                       <p className="text-slate-400 text-sm">
                         Due {formatDistanceToNow(new Date(challenge.dueDate), { addSuffix: true })}
                       </p>
-                      <div className="flex items-center space-x-4">
-                        <span className="text-sm text-slate-300">
-                          Stake: ₦{parseFloat(challenge.amount).toLocaleString()} each
-                        </span>
-                        <span className="text-sm text-blue-400">
-                          {challenge.challengerUser?.username || challenge.challengerUser?.firstName || 'Unknown'} vs {challenge.challengedUser?.username || challenge.challengedUser?.firstName || 'Unknown'}
-                        </span>
+                      <div className="flex items-center space-x-4 mt-2">
+                        {challenge.adminCreated ? (
+                          <>
+                            <span className="text-sm text-slate-300">
+                              Pool: {challenge.yesStakeTotal.toLocaleString()} YES | {challenge.noStakeTotal.toLocaleString()} NO
+                            </span>
+                            <span className="text-xs text-purple-400">
+                              Total: {(challenge.yesStakeTotal + challenge.noStakeTotal).toLocaleString()} coins
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-sm text-slate-300">
+                              Stake: {challenge.amount.toLocaleString()} coins each
+                            </span>
+                            <span className="text-sm text-cyan-400">
+                              {challenge.challengerUser?.username || 'Player 1'} vs {challenge.challengedUser?.username || 'Player 2'}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={() => handleSetResult(challenge.id, 'challenger_won')}
-                        className="bg-green-600 hover:bg-green-700"
-                        disabled={setResultMutation.isPending}
-                      >
-                        {challenge.challengerUser.username} Wins
-                      </Button>
-                      <Button
-                        onClick={() => handleSetResult(challenge.id, 'challenged_won')}
-                        className="bg-blue-600 hover:bg-blue-700"
-                        disabled={setResultMutation.isPending}
-                      >
-                        {challenge.challengedUser.username} Wins
-                      </Button>
+                    <div className="flex gap-2 flex-wrap">
+                      {challenge.adminCreated ? (
+                        <>
+                          <Button
+                            onClick={() => handleSetResult(challenge.id, 'yes_won')}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-xs"
+                            disabled={setResultMutation.isPending}
+                            title="Resolve YES side winner on-chain"
+                          >
+                            ✓ YES Wins
+                          </Button>
+                          <Button
+                            onClick={() => handleSetResult(challenge.id, 'no_won')}
+                            className="bg-rose-600 hover:bg-rose-700 text-xs"
+                            disabled={setResultMutation.isPending}
+                            title="Resolve NO side winner on-chain"
+                          >
+                            ✗ NO Wins
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            onClick={() => handleSetResult(challenge.id, 'challenger_won')}
+                            className="bg-cyan-600 hover:bg-cyan-700 text-xs"
+                            disabled={setResultMutation.isPending}
+                            title="Resolve on-chain with crypto settlement"
+                          >
+                            {challenge.challengerUser?.username || 'Player 1'} Wins
+                          </Button>
+                          <Button
+                            onClick={() => handleSetResult(challenge.id, 'challenged_won')}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-xs"
+                            disabled={setResultMutation.isPending}
+                            title="Resolve on-chain with crypto settlement"
+                          >
+                            {challenge.challengedUser?.username || 'Player 2'} Wins
+                          </Button>
+                        </>
+                      )}
                       <Button
                         onClick={() => handleSetResult(challenge.id, 'draw')}
-                        className="bg-gray-600 hover:bg-gray-700"
+                        className="bg-gray-600 hover:bg-gray-700 text-xs"
                         disabled={setResultMutation.isPending}
+                        title="Refund both participants on-chain"
                       >
-                        Draw
+                        🤝 Draw
                       </Button>
                       <Button
                         variant="outline"
                         onClick={() => setSelectedChallengeId(challenge.id)}
-                        className="border-slate-600"
+                        className="border-slate-600 text-xs"
+                        title="View transaction details"
                       >
                         <Eye className="w-4 h-4" />
                       </Button>
@@ -490,14 +576,13 @@ export default function AdminChallengePayouts() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-700">
+                  <th className="text-left p-3 text-slate-400">Type</th>
                   <th className="text-left p-3 text-slate-400">Challenge</th>
-                  <th className="text-left p-3 text-slate-400">Participants</th>
+                  <th className="text-left p-3 text-slate-400">Participants/Pool</th>
                   <th className="text-left p-3 text-slate-400">Status</th>
-                  <th className="text-left p-3 text-slate-400">Stake</th>
-                  <th className="text-left p-3 text-slate-400">Bonus</th>
+                  <th className="text-left p-3 text-slate-400">Settlement</th>
                   <th className="text-left p-3 text-slate-400">Result</th>
-                  <th className="text-left p-3 text-slate-400">Started</th>
-                  <th className="text-left p-3 text-slate-400">Due Date</th>
+                  <th className="text-left p-3 text-slate-400">Due</th>
                   <th className="text-left p-3 text-slate-400">Actions</th>
                 </tr>
               </thead>
@@ -506,64 +591,59 @@ export default function AdminChallengePayouts() {
                   <React.Fragment key={challenge.id}>
                     <tr className="border-b border-slate-800 hover:bg-slate-800">
                       <td className="p-3">
-                        <div className="font-medium text-white">{challenge.title}</div>
+                        {getChallengeTypeBadge(challenge)}
+                      </td>
+                      <td className="p-3">
+                        <div className="font-medium text-white text-sm">{challenge.title}</div>
                         <div className="text-xs text-slate-400">{challenge.category}</div>
                       </td>
-                      <td className="p-3 text-slate-300">
-                        <div className="flex items-center space-x-2">
-                          <Users className="w-4 h-4" />
-                          <span className="text-xs">
-                            {challenge.challengerUser?.username || challenge.challengerUser?.firstName || 'Unknown'} vs {challenge.challengedUser?.username || challenge.challengedUser?.firstName || 'Unknown'}
-                          </span>
-                        </div>
+                      <td className="p-3 text-slate-300 text-xs">
+                        {challenge.adminCreated ? (
+                          <div>
+                            <div>YES: {challenge.yesStakeTotal.toLocaleString()}</div>
+                            <div>NO: {challenge.noStakeTotal.toLocaleString()}</div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center space-x-2">
+                            <Users className="w-3 h-3" />
+                            <span>
+                              {challenge.challengerUser?.username || 'P1'} vs {challenge.challengedUser?.username || 'P2'}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="p-3">
                         <Badge className={getStatusColor(challenge.status, challenge.result)}>
                           {challenge.status}
                         </Badge>
                       </td>
-                      <td className="p-3 text-slate-300">
-                        ₦{parseFloat(challenge.amount).toLocaleString()}
+                      <td className="p-3 text-xs">
+                        {challenge.onChainStatus === 'resolved' ? (
+                          <Badge className="bg-emerald-600/30 text-emerald-300 font-mono text-xs">
+                            ⛓️ On-Chain
+                          </Badge>
+                        ) : challenge.status === 'completed' ? (
+                          <Badge className="bg-blue-600/30 text-blue-300">
+                            Pending Settlement
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-gray-600/30 text-gray-300">
+                            Awaiting Result
+                          </Badge>
+                        )}
                       </td>
                       <td className="p-3">
-                        {challenge.bonusEndsAt && new Date(challenge.bonusEndsAt) > new Date() ? (
-                          <Badge className="bg-purple-600/30 text-purple-300 text-xs">
-                            {challenge.bonusMultiplier}x {challenge.bonusSide}
+                        {challenge.result ? (
+                          <Badge className={getResultColor(challenge.result)} title={`Result: ${challenge.result}`}>
+                            {getResultText(challenge.result, challenge).split(' ')[0]}
                           </Badge>
                         ) : (
                           <span className="text-slate-500 text-xs">-</span>
                         )}
                       </td>
-                      <td className="p-3">
-                        {challenge.result ? (
-                          <Badge className={getResultColor(challenge.result)}>
-                            {challenge.result === 'challenger_won' ? 'Challenger' : 
-                             challenge.result === 'challenged_won' ? 'Challenged' : 'Draw'}
-                          </Badge>
-                        ) : (
-                          <span className="text-slate-500">-</span>
-                        )}
-                      </td>
-                      <td className="p-3 text-slate-400">
-                        {challenge.createdAt ? (
-                          <div className="flex items-center space-x-1">
-                            <Clock className="w-4 h-4" />
-                            <span className="text-xs">
-                              {new Date(challenge.createdAt).toLocaleDateString()}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-slate-500">-</span>
-                        )}
-                      </td>
-                      <td className="p-3 text-slate-400">
+                      <td className="p-3 text-slate-400 text-xs">
                         {challenge.dueDate ? (
-                          <div className="flex items-center space-x-1">
-                            <Clock className="w-4 h-4" />
-                            <span className="text-xs">
-                              {new Date(challenge.dueDate).toLocaleDateString()}
-                            </span>
-                          </div>
+                          formatDistanceToNow(new Date(challenge.dueDate), { addSuffix: false })
                         ) : (
                           <span className="text-slate-500">-</span>
                         )}
@@ -572,50 +652,70 @@ export default function AdminChallengePayouts() {
                         <div className="flex gap-1 flex-wrap">
                           {needsAdminAction(challenge) && (
                             <>
-                              <Button
-                                size="sm"
-                                onClick={() => handleSetResult(challenge.id, 'challenger_won')}
-                                className="bg-green-600 hover:bg-green-700 text-xs"
-                                title="Challenger Won"
-                              >
-                                C
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => handleSetResult(challenge.id, 'challenged_won')}
-                                className="bg-blue-600 hover:bg-blue-700 text-xs"
-                                title="Challenged Won"
-                              >
-                                P
-                              </Button>
+                              {challenge.adminCreated ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleSetResult(challenge.id, 'yes_won')}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-xs"
+                                    title="YES side wins - on-chain settlement"
+                                  >
+                                    ✓ YES
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleSetResult(challenge.id, 'no_won')}
+                                    className="bg-rose-600 hover:bg-rose-700 text-xs"
+                                    title="NO side wins - on-chain settlement"
+                                  >
+                                    ✗ NO
+                                  </Button>
+                                </>
+                              ) : (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleSetResult(challenge.id, 'challenger_won')}
+                                    className="bg-cyan-600 hover:bg-cyan-700 text-xs"
+                                    title="Resolve on-chain"
+                                  >
+                                    P1
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleSetResult(challenge.id, 'challenged_won')}
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-xs"
+                                    title="Resolve on-chain"
+                                  >
+                                    P2
+                                  </Button>
+                                </>
+                              )}
                               <Button
                                 size="sm"
                                 onClick={() => handleSetResult(challenge.id, 'draw')}
                                 className="bg-gray-600 hover:bg-gray-700 text-xs"
-                                title="Draw"
+                                title="Draw - refund on-chain"
                               >
-                                D
+                                =
                               </Button>
                             </>
                           )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setBonusData({ challengeId: challenge.id, bonusSide: 'YES', bonusMultiplier: '1.5', durationHours: 1 });
-                              setBonusOpen(true);
-                            }}
-                            className="border-purple-600 text-purple-400 hover:bg-purple-900/30 text-xs"
-                            title="Add or modify bonus"
-                          >
-                            <Zap className="w-3 h-3" />
-                          </Button>
+                          {challenge.onChainStatus === 'resolved' && (
+                            <Button
+                              size="sm"
+                              className="bg-emerald-700 text-white text-xs pointer-events-none"
+                              title="Resolved on Base Sepolia"
+                            >
+                              ⛓️ Settled
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => setSelectedChallengeId(challenge.id)}
                             className="border-slate-600 text-xs hover:bg-slate-700"
-                            title="View Details"
+                            title="View blockchain transaction"
                           >
                             <Eye className="w-3 h-3" />
                           </Button>
@@ -969,34 +1069,61 @@ export default function AdminChallengePayouts() {
                 {/* Actions */}
                 {challenge.status === 'active' && !challenge.result && (
                   <div className="bg-slate-700/50 rounded-lg p-4">
-                    <h4 className="text-white font-semibold mb-3">Release Payment</h4>
-                    <p className="text-slate-400 text-sm mb-3">Select the winner to release funds from escrow</p>
+                    <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                      <Zap className="w-4 h-4" /> On-Chain Settlement
+                    </h4>
+                    <p className="text-slate-400 text-sm mb-3">Select the outcome to resolve this challenge on Base Sepolia blockchain</p>
                     <div className="flex flex-wrap gap-2">
-                      <Button
-                        onClick={() => handleSetResult(challenge.id, 'challenger_won')}
-                        className="bg-green-600 hover:bg-green-700"
-                        disabled={setResultMutation.isPending}
-                        data-testid="button-challenger-wins"
-                      >
-                        <Trophy className="w-4 h-4 mr-2" />
-                        {challenge.challengerUser?.username || 'Challenger'} Wins (₦{winnerPayout.toLocaleString()})
-                      </Button>
-                      <Button
-                        onClick={() => handleSetResult(challenge.id, 'challenged_won')}
-                        className="bg-blue-600 hover:bg-blue-700"
-                        disabled={setResultMutation.isPending}
-                        data-testid="button-challenged-wins"
-                      >
-                        <Trophy className="w-4 h-4 mr-2" />
-                        {challenge.challengedUser?.username || 'Challenged'} Wins (₦{winnerPayout.toLocaleString()})
-                      </Button>
+                      {challenge.adminCreated ? (
+                        <>
+                          <Button
+                            onClick={() => handleSetResult(challenge.id, 'yes_won')}
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                            disabled={setResultMutation.isPending}
+                            title="Settle YES side winner on blockchain"
+                          >
+                            <Zap className="w-4 h-4 mr-2" />
+                            ✓ YES Side Wins
+                          </Button>
+                          <Button
+                            onClick={() => handleSetResult(challenge.id, 'no_won')}
+                            className="bg-rose-600 hover:bg-rose-700"
+                            disabled={setResultMutation.isPending}
+                            title="Settle NO side winner on blockchain"
+                          >
+                            <Zap className="w-4 h-4 mr-2" />
+                            ✗ NO Side Wins
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            onClick={() => handleSetResult(challenge.id, 'challenger_won')}
+                            className="bg-cyan-600 hover:bg-cyan-700"
+                            disabled={setResultMutation.isPending}
+                            title="Settle on-chain to challenger"
+                          >
+                            <Zap className="w-4 h-4 mr-2" />
+                            {challenge.challengerUser?.username || 'Challenger'} Wins
+                          </Button>
+                          <Button
+                            onClick={() => handleSetResult(challenge.id, 'challenged_won')}
+                            className="bg-indigo-600 hover:bg-indigo-700"
+                            disabled={setResultMutation.isPending}
+                            title="Settle on-chain to challenged"
+                          >
+                            <Zap className="w-4 h-4 mr-2" />
+                            {challenge.challengedUser?.username || 'Challenged'} Wins
+                          </Button>
+                        </>
+                      )}
                       <Button
                         onClick={() => handleSetResult(challenge.id, 'draw')}
                         variant="secondary"
                         disabled={setResultMutation.isPending}
-                        data-testid="button-draw"
+                        title="Refund both participants on-chain"
                       >
-                        Draw (Return Stakes)
+                        🤝 Draw (Refund on-chain)
                       </Button>
                     </div>
                   </div>
@@ -1004,15 +1131,45 @@ export default function AdminChallengePayouts() {
 
                 {/* Completed Result */}
                 {challenge.result && (
-                  <div className="bg-green-600/10 border border-green-500/30 rounded-lg p-4">
-                    <h4 className="text-green-400 font-semibold mb-2">Challenge Completed</h4>
-                    <p className="text-white">
-                      Result: <strong>{challenge.result === 'challenger_won' ? `${challenge.challengerUser?.username} (Challenger) Won` : 
-                               challenge.result === 'challenged_won' ? `${challenge.challengedUser?.username} (Challenged) Won` : 'Draw'}</strong>
-                    </p>
-                    {challenge.completedAt && (
-                      <p className="text-slate-400 text-sm mt-1">Completed: {new Date(challenge.completedAt).toLocaleString()}</p>
-                    )}
+                  <div className={`rounded-lg p-4 border ${challenge.onChainStatus === 'resolved' ? 'bg-emerald-600/10 border-emerald-500/30' : 'bg-blue-600/10 border-blue-500/30'}`}>
+                    <h4 className={`${challenge.onChainStatus === 'resolved' ? 'text-emerald-400' : 'text-blue-400'} font-semibold mb-3 flex items-center gap-2`}>
+                      {challenge.onChainStatus === 'resolved' ? (
+                        <>
+                          <CheckCircle className="w-5 h-5" />
+                          Challenge Settled On-Chain
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="w-5 h-5" />
+                          Result Set (Pending On-Chain Settlement)
+                        </>
+                      )}
+                    </h4>
+                    <div className="space-y-2 text-sm">
+                      <p className="text-white">
+                        Result: <strong>{getResultText(challenge.result, challenge)}</strong>
+                      </p>
+                      {challenge.completedAt && (
+                        <p className="text-slate-400">
+                          Decided: {new Date(challenge.completedAt).toLocaleString()}
+                        </p>
+                      )}
+                      {challenge.onChainStatus === 'resolved' && challenge.blockchainResolutionTxHash && (
+                        <div className="bg-slate-900/50 rounded p-2 mt-2 space-y-1">
+                          <p className="text-slate-400 text-xs">⛓️ Blockchain Settlement</p>
+                          <a 
+                            href={`https://sepolia.basescan.org/tx/${challenge.blockchainResolutionTxHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-cyan-400 hover:text-cyan-300 text-xs break-all"
+                            title="View on Base Sepolia"
+                          >
+                            {challenge.blockchainResolutionTxHash.slice(0, 20)}...{challenge.blockchainResolutionTxHash.slice(-20)}
+                          </a>
+                          <p className="text-xs text-slate-500">Network: Base Sepolia</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

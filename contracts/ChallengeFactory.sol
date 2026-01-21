@@ -96,6 +96,19 @@ contract ChallengeFactory is ReentrancyGuard, Ownable {
     
     event AdminUpdated(address indexed newAdmin);
     
+    event OpenChallengeCreated(
+        uint256 indexed challengeId,
+        address indexed creator,
+        uint256 stakeAmount,
+        address paymentToken,
+        string metadataURI
+    );
+    
+    event OpenChallengeAccepted(
+        uint256 indexed challengeId,
+        address indexed acceptor
+    );
+    
     // Constructor
     constructor(address _pointsToken, address _admin) {
         require(_pointsToken != address(0), "Invalid points token");
@@ -218,6 +231,84 @@ contract ChallengeFactory is ReentrancyGuard, Ownable {
         userLockedStakes[msg.sender] += challenge.stakeAmount;
         
         emit ChallengeAccepted(challengeId, msg.sender);
+    }
+    
+    /**
+     * @dev Create an open P2P challenge (anyone can join as opponent)
+     * Challenge is fully on-chain from creation
+     * First acceptor becomes the opponent
+     */
+    function createOpenP2PChallenge(
+        uint256 stakeAmount,
+        address paymentToken,
+        string memory metadataURI
+    ) external nonReentrant returns (uint256) {
+        require(stakeAmount > 0, "Stake must be > 0");
+        require(paymentToken != address(0), "Invalid token");
+        
+        // Transfer stake from challenger
+        require(
+            IERC20(paymentToken).transferFrom(msg.sender, address(this), stakeAmount),
+            "Stake transfer failed"
+        );
+        
+        uint256 challengeId = nextChallengeId++;
+        
+        challenges[challengeId] = Challenge({
+            id: challengeId,
+            challengeType: ChallengeType.P2P,
+            creator: msg.sender,
+            participant: address(0),  // Open (no opponent yet)
+            stakeAmount: stakeAmount,
+            paymentToken: paymentToken,
+            status: ChallengeStatus.CREATED,
+            winner: address(0),
+            createdAt: block.timestamp,
+            resolvedAt: 0,
+            metadataURI: metadataURI
+        });
+        
+        userLockedStakes[msg.sender] += stakeAmount;
+        
+        emit OpenChallengeCreated(
+            challengeId,
+            msg.sender,
+            stakeAmount,
+            paymentToken,
+            metadataURI
+        );
+        
+        return challengeId;
+    }
+    
+    /**
+     * @dev Accept an open P2P challenge (first user to join becomes opponent)
+     * This activates the challenge on-chain with both stakes in escrow
+     */
+    function joinOpenP2PChallenge(uint256 challengeId) external nonReentrant {
+        Challenge storage challenge = challenges[challengeId];
+        
+        require(challenge.status == ChallengeStatus.CREATED, "Challenge not open");
+        require(challenge.challengeType == ChallengeType.P2P, "Not a P2P challenge");
+        require(challenge.participant == address(0), "Challenge already accepted");
+        require(msg.sender != challenge.creator, "Cannot accept own challenge");
+        
+        // Transfer stake from acceptor
+        require(
+            IERC20(challenge.paymentToken).transferFrom(
+                msg.sender,
+                address(this),
+                challenge.stakeAmount
+            ),
+            "Stake transfer failed"
+        );
+        
+        // Set acceptor as participant and activate challenge
+        challenge.participant = msg.sender;
+        challenge.status = ChallengeStatus.ACTIVE;
+        userLockedStakes[msg.sender] += challenge.stakeAmount;
+        
+        emit OpenChallengeAccepted(challengeId, msg.sender);
     }
     
     /**

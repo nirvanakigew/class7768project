@@ -63,8 +63,25 @@ export default function AdminChallengeDisputes() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [adminNotes, setAdminNotes] = useState('');
 
-  // TODO: Create /api/admin/challenges/disputes endpoint
-  const { data: disputes = [], isLoading, refetch } = { data: [] as any[], isLoading: false, refetch: async () => {} };
+  // Fetch disputed challenges requiring admin resolution
+  const { data: disputes = [], isLoading, refetch } = useQuery({
+    queryKey: ["/api/admin/challenges/disputes/list"],
+    queryFn: async () => {
+      try {
+        const response = await adminApiRequest('/api/admin/challenges/disputes/list', { credentials: 'include' });
+        return response.disputes || [];
+      } catch (error) {
+        console.error("Error fetching disputes:", error);
+        toast({
+          title: "❌ Failed to load disputes",
+          description: String(error),
+          variant: "destructive",
+        });
+        return [];
+      }
+    },
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
 
   // Fetch pending_admin challenges that need resolution
   const { data: pendingChallenges = [], isLoading: pendingLoading } = useQuery({
@@ -87,7 +104,7 @@ export default function AdminChallengeDisputes() {
       notes 
     }: { 
       challengeId: number; 
-      decision: 'challenger_won' | 'challenged_won' | 'refund'; 
+      decision: 'challenger_won' | 'challenged_won' | 'draw'; 
       notes: string;
     }) => {
       return adminApiRequest(`/api/admin/challenges/${challengeId}/resolve-dispute`, {
@@ -98,11 +115,11 @@ export default function AdminChallengeDisputes() {
     },
     onSuccess: (data) => {
       toast({
-        title: "✅ Dispute Resolved",
-        description: data.message,
+        title: "✅ Dispute Resolved On-Chain",
+        description: `⛓️ Base Sepolia TX: ${data.transactionHash?.slice(0, 10)}...`,
       });
       refetch();
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/challenges/disputes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/challenges/disputes/list"] });
       setSelectedDispute(null);
       setAdminNotes('');
     },
@@ -129,13 +146,13 @@ export default function AdminChallengeDisputes() {
     return true;
   });
 
-  const handleResolve = (dispute: DisputedChallenge, decision: 'challenger_won' | 'challenged_won' | 'refund') => {
+  const handleResolve = (dispute: DisputedChallenge, decision: 'challenger_won' | 'challenged_won' | 'draw') => {
     const confirmMsg = 
-      decision === 'challenger_won' ? `Award ₦${parseFloat(dispute.amount) * 2 * 0.95} to ${dispute.challengerUser.username}?` :
-      decision === 'challenged_won' ? `Award ₦${parseFloat(dispute.amount) * 2 * 0.95} to ${dispute.challengedUser.username}?` :
-      `Refund ₦${parseFloat(dispute.amount)} to each participant?`;
+      decision === 'challenger_won' ? `Award dispute to ${dispute.challenger} + on-chain settlement?` :
+      decision === 'challenged_won' ? `Award dispute to ${dispute.challenged} + on-chain settlement?` :
+      `Refund both participants on-chain?`;
 
-    if (confirm(confirmMsg)) {
+    if (confirm(`⛓️  ${confirmMsg}`)) {
       resolveMutation.mutate({
         challengeId: dispute.id,
         decision,
@@ -362,7 +379,7 @@ export default function AdminChallengeDisputes() {
                         </div>
 
                         <div className="space-y-2">
-                          <p className="text-xs text-slate-400">Decide outcome:</p>
+                          <p className="text-xs text-slate-400">⛓️ On-Chain Settlement:</p>
                           <div className="flex gap-2">
                             <Button
                               onClick={() => handleResolve(dispute, 'challenger_won')}
@@ -370,7 +387,7 @@ export default function AdminChallengeDisputes() {
                               className="flex-1 bg-blue-600 hover:bg-blue-700 text-sm"
                             >
                               <UserCheck className="w-3 h-3 mr-1" />
-                              {dispute.challengerUser.username} Wins
+                              Award Challenger
                             </Button>
                             <Button
                               onClick={() => handleResolve(dispute, 'challenged_won')}
@@ -378,16 +395,16 @@ export default function AdminChallengeDisputes() {
                               className="flex-1 bg-green-600 hover:bg-green-700 text-sm"
                             >
                               <UserCheck className="w-3 h-3 mr-1" />
-                              {dispute.challengedUser.username} Wins
+                              Award Challenged
                             </Button>
                           </div>
                           <Button
-                            onClick={() => handleResolve(dispute, 'refund')}
+                            onClick={() => handleResolve(dispute, 'draw')}
                             disabled={resolveMutation.isPending}
                             variant="outline"
                             className="w-full border-slate-600 text-slate-300 text-sm"
                           >
-                            ↩️ Refund Both
+                            🤝 Refund Both (Draw)
                           </Button>
                         </div>
                       </div>

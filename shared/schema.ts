@@ -301,10 +301,10 @@ export const friends = pgTable("friends", {
 
 // Followers system - users can follow each other
 export const followers = pgTable("followers", {
-  id: serial("id").primaryKey(),
+  id: uuid("id").primaryKey().defaultRandom(),
   followerId: varchar("follower_id").notNull(),
-  followeeId: varchar("followee_id").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
+  followeeId: varchar("following_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 }, (table) => [
   unique().on(table.followerId, table.followeeId),
 ]);

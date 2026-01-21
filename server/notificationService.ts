@@ -18,6 +18,7 @@ export enum NotificationEvent {
   CHALLENGE_STARTING_SOON = 'challenge.starting_soon',
   CHALLENGE_ENDING_SOON = 'challenge.ending_soon',
   CHALLENGE_JOINED_FRIEND = 'challenge.joined.friend',
+  NEW_CHALLENGE_ACCEPTED = 'challenge.accepted',
   
   // Friend Events
   FRIEND_REQUEST = 'friend.request',
