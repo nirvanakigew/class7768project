@@ -43,6 +43,8 @@ export const users = pgTable("users", {
   xp: integer("xp").default(0),
   points: integer("points").default(1000),
   balance: decimal("balance", { precision: 10, scale: 2 }).default("0.00"),
+  followerCount: integer("follower_count").default(0),
+  followingCount: integer("following_count").default(0),
   referralCode: varchar("referral_code").unique(),
   referredBy: varchar("referred_by"),
   streak: integer("streak").default(0),
@@ -297,6 +299,16 @@ export const friends = pgTable("friends", {
   acceptedAt: timestamp("accepted_at"),
 });
 
+// Followers system - users can follow each other
+export const followers = pgTable("followers", {
+  id: serial("id").primaryKey(),
+  followerId: varchar("follower_id").notNull(),
+  followeeId: varchar("followee_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  unique().on(table.followerId, table.followeeId),
+]);
+
 // Achievement definitions
 export const achievements = pgTable("achievements", {
   id: serial("id").primaryKey(),
@@ -468,6 +480,8 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   challengesReceived: many(challenges, { relationName: "challenged" }),
   friendRequestsSent: many(friends, { relationName: "requester" }),
   friendRequestsReceived: many(friends, { relationName: "addressee" }),
+  followerRelationships: many(followers, { relationName: "followee" }),
+  followingRelationships: many(followers, { relationName: "follower" }),
   achievements: many(userAchievements),
   notifications: many(notifications),
   transactions: many(transactions),
@@ -508,6 +522,20 @@ export const challengesRelations = relations(challenges, ({ one, many }) => ({
   }),
   messages: many(challengeMessages),
   escrow: one(escrow),
+}));
+
+// Followers relations
+export const followersRelations = relations(followers, ({ one }) => ({
+  follower: one(users, {
+    fields: [followers.followerId],
+    references: [users.id],
+    relationName: "follower"
+  }),
+  followee: one(users, {
+    fields: [followers.followeeId],
+    references: [users.id],
+    relationName: "followee"
+  }),
 }));
 
 // Insert schemas
@@ -733,6 +761,7 @@ export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 export type Achievement = typeof achievements.$inferSelect;
 export type Friend = typeof friends.$inferSelect;
+export type Follower = typeof followers.$inferSelect;
 export type EventParticipant = typeof eventParticipants.$inferSelect;
 export type EventMessage = typeof eventMessages.$inferSelect;
 export type ChallengeMessage = typeof challengeMessages.$inferSelect;

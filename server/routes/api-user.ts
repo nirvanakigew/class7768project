@@ -91,6 +91,8 @@ router.get('/profile', isAuthenticated, async (req: Request, res: Response) => {
         xp: user.xp,
         points: user.points,
         balance: user.balance,
+        followerCount: user.followerCount || 0,
+        followingCount: user.followingCount || 0,
         fcmTokenSet: !!user.fcmToken,
         isTelegramUser: user.isTelegramUser,
         createdAt: user.createdAt,

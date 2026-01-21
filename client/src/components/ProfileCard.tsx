@@ -110,7 +110,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ userId, onClose }) => {
   // Follow mutation
   const followMutation = useMutation({
     mutationFn: async (action: 'follow' | 'unfollow') => {
-      return await apiRequest("POST", `/api/users/${userId}/follow`);
+      return await apiRequest("POST", `/api/followers/${userId}/follow`);
     },
     onMutate: async (action) => {
       // Optimistic update

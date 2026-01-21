@@ -8,6 +8,7 @@ import apiPointsRouter from './api-points';
 import apiAdminResolveRouter from './api-admin-resolve';
 import apiUserRouter from './api-user';
 import apiFriendsRouter from './api-friends';
+import apiFollowersRouter from './api-followers';
 
 export function registerBlockchainRoutes(app: express.Application) {
   /**
@@ -77,11 +78,21 @@ export function registerBlockchainRoutes(app: express.Application) {
    */
   app.use('/api/friends', apiFriendsRouter);
 
+  /**
+   * Followers Management
+   * POST /api/followers/:userId/follow - Follow/unfollow a user
+   * GET /api/followers/:userId - Get user's followers list
+   * GET /api/followers/:userId/following - Get user's following list
+   * GET /api/followers/status/:userId - Check if following status
+   */
+  app.use('/api/followers', apiFollowersRouter);
+
   console.log('✅ Blockchain REST API routes registered:');
   console.log('   - /api/challenges');
   console.log('   - /api/payouts');
   console.log('   - /api/points');
   console.log('   - /api/admin/challenges');
+  console.log('   - /api/followers');
 }
 
 export { apiChallengesRouter, apiPayoutsRouter, apiPointsRouter, apiAdminResolveRouter };

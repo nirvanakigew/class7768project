@@ -23,6 +23,9 @@ export enum NotificationEvent {
   FRIEND_REQUEST = 'friend.request',
   FRIEND_ACCEPTED = 'friend.accepted',
   
+  // Follower Events
+  NEW_FOLLOWER = 'new_follower',
+  
   // Leaderboard & Points
   LEADERBOARD_RANK_CHANGE = 'leaderboard.rank_change',
   POINTS_EARNED = 'points.earned',
