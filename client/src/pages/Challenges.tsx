@@ -100,6 +100,8 @@ export default function Challenges() {
     description: '',
     category: 'general',
     amount: 100,
+    challengeType: 'open', // 'open' or 'direct'
+    opponentId: null as string | null,
   });
 
   // Listen for header search events dispatched from Navigation
@@ -198,8 +200,9 @@ export default function Challenges() {
       // P2P challenges use USDC on Base Sepolia
       const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b3566dA8860';
       
-      if (!preSelectedUser?.id) {
-        throw new Error('Please select an opponent');
+      // For direct P2P: require opponent selection
+      if (formData.challengeType === 'direct' && !preSelectedUser?.id) {
+        throw new Error('Please select an opponent for direct challenge');
       }
 
       // Step 1: Store challenge in database
@@ -210,12 +213,13 @@ export default function Challenges() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          opponentId: preSelectedUser.id,
+          opponentId: formData.challengeType === 'direct' ? preSelectedUser.id : null,
           title: formData.title,
           description: formData.description,
           stakeAmount: formData.amount.toString(),
           paymentToken: USDC_ADDRESS,
           metadataURI: 'ipfs://bafytest',
+          challengeType: formData.challengeType,
         }),
       });
 
@@ -257,7 +261,7 @@ export default function Challenges() {
       });
       queryClient.invalidateQueries({ queryKey: ["/api/challenges"] });
       setIsCreateDialogOpen(false);
-      setCreateFormData({ title: '', description: '', category: 'general', amount: 100 });
+      setCreateFormData({ title: '', description: '', category: 'general', amount: 100, challengeType: 'open', opponentId: null });
       setPreSelectedUser(null);
     },
     onError: (error: Error) => {
@@ -594,6 +598,40 @@ export default function Challenges() {
             </DialogHeader>
             <div className="space-y-4">
               <div>
+                <label className="block text-sm font-medium mb-2">Challenge Type</label>
+                <Select value={createFormData.challengeType} onValueChange={(val) => setCreateFormData({...createFormData, challengeType: val as 'open' | 'direct'})}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">🌍 Open Challenge (Anyone can join)</SelectItem>
+                    <SelectItem value="direct">🎯 Direct Challenge (Challenge a specific user)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {createFormData.challengeType === 'direct' && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Challenge Opponent</label>
+                  <div className="p-2 border rounded-lg bg-slate-50 dark:bg-slate-800 text-sm">
+                    {preSelectedUser ? (
+                      <div className="flex items-center justify-between">
+                        <span>{preSelectedUser.username || preSelectedUser.firstName}</span>
+                        <button
+                          onClick={() => setPreSelectedUser(null)}
+                          className="text-xs text-red-500 hover:text-red-600"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-slate-500">Select an opponent to challenge</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div>
                 <label className="block text-sm font-medium mb-2">Title</label>
                 <Input 
                   placeholder="Challenge title"
@@ -648,7 +686,11 @@ export default function Challenges() {
                 <Button 
                   onClick={() => createChallengeMutation.mutate(createFormData)}
                   className="flex-1 bg-[#ccff00] text-black hover:bg-[#b8e600]"
-                  disabled={createChallengeMutation.isPending || !createFormData.title}
+                  disabled={
+                    createChallengeMutation.isPending || 
+                    !createFormData.title ||
+                    (createFormData.challengeType === 'direct' && !preSelectedUser?.id)
+                  }
                 >
                   {createChallengeMutation.isPending ? 'Creating...' : 'Create'}
                 </Button>

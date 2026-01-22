@@ -189,31 +189,37 @@ router.post('/create-admin', isAuthenticated, async (req: Request, res: Response
 
 /**
  * POST /api/challenges/create-p2p
- * Create a P2P challenge between two users
+ * Create a P2P challenge (direct or open)
+ * - Direct P2P: opponentId specified, only that user can accept
+ * - Open Challenge: opponentId null/undefined, anyone can accept
  * Note: User must sign the blockchain transaction client-side with their wallet
  */
 router.post('/create-p2p', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const { opponentId, stakeAmount, paymentToken, metadataURI, title, description } = req.body;
+    const { opponentId, stakeAmount, paymentToken, metadataURI, title, description, challengeType } = req.body;
     const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    if (!opponentId || !stakeAmount || !paymentToken) {
+    if (!stakeAmount || !paymentToken) {
       return res.status(400).json({
-        error: 'Missing required fields: opponentId, stakeAmount, paymentToken',
+        error: 'Missing required fields: stakeAmount, paymentToken',
       });
     }
 
-    if (userId === opponentId) {
+    // Determine if this is open or direct P2P
+    const isOpenChallenge = !opponentId;
+    const type = challengeType || (isOpenChallenge ? 'open' : 'p2p');
+
+    if (!isOpenChallenge && userId === opponentId) {
       return res.status(400).json({
         error: 'Cannot challenge yourself',
       });
     }
 
-    console.log(`\n💾 Creating P2P challenge: ${userId} vs ${opponentId}...`);
+    console.log(`\n💾 Creating ${type} challenge: creator=${userId}${!isOpenChallenge ? ` opponent=${opponentId}` : ' (open - any joiner)'}`);
 
     // Calculate creation points based on stake amount (50 + amount × 5, MAX 500)
     const stakeAmountUSD = parseInt(stakeAmount); // USDC/USDT amounts are in USD equivalent
@@ -232,7 +238,7 @@ router.post('/create-p2p', isAuthenticated, async (req: Request, res: Response) 
         status: 'pending',
         adminCreated: false,
         challenger: userId,
-        challenged: opponentId,
+        challenged: opponentId || null, // null for open challenges
         paymentTokenAddress: paymentToken,
         stakeAmountWei: BigInt(ethers.parseUnits(stakeAmount, 6).toString()),
         onChainStatus: 'pending', // Waiting for user to sign and submit
@@ -242,42 +248,47 @@ router.post('/create-p2p', isAuthenticated, async (req: Request, res: Response) 
 
     const challengeId = dbChallenge[0].id;
 
-    console.log(`✅ P2P challenge created in DB: ${challengeId}`);
+    console.log(`✅ ${type} challenge created in DB: ${challengeId}`);
     console.log(`📝 User must sign transaction client-side to complete`);
 
     // Get challenger name for notification
     const challenger = await db.select().from(users).where(eq(users.id, userId)).limit(1);
     const challengerName = challenger[0]?.firstName || 'Someone';
 
-    // Send notification to opponent
-    await notificationService.send({
-      userId: opponentId,
-      challengeId: challengeId.toString(),
-      event: NotificationEvent.CHALLENGE_CREATED,
-      title: `🎯 ${challengerName} challenged you!`,
-      body: `${challengerName} challenged you to: "${title}"`,
-      channels: [NotificationChannel.IN_APP, NotificationChannel.PUSH],
-      priority: NotificationPriority.MEDIUM,
-      data: {
-        challengeId: challengeId,
-        title,
-        stakeAmount,
-        challenger: userId,
-      },
-    }).catch(err => {
-      console.warn('Failed to send challenge notification:', err.message);
-      // Don't fail the challenge creation if notification fails
-    });
+    // For direct P2P: send notification to specific opponent
+    if (!isOpenChallenge && opponentId) {
+      await notificationService.send({
+        userId: opponentId,
+        challengeId: challengeId.toString(),
+        event: NotificationEvent.CHALLENGE_CREATED,
+        title: `🎯 ${challengerName} challenged you!`,
+        body: `${challengerName} challenged you to: "${title}"`,
+        channels: [NotificationChannel.IN_APP, NotificationChannel.PUSH],
+        priority: NotificationPriority.MEDIUM,
+        data: {
+          challengeId: challengeId,
+          title,
+          stakeAmount,
+          challenger: userId,
+        },
+      }).catch(err => {
+        console.warn('Failed to send challenge notification:', err.message);
+      });
 
-    console.log(`📬 Notification sent to opponent ${opponentId}`);
+      console.log(`📬 Notification sent to opponent ${opponentId}`);
+    } else {
+      // For open challenges: broadcast to relevant audience
+      console.log(`📢 Open challenge created - available for anyone to join`);
+    }
 
     res.json({
       success: true,
       challengeId,
       title,
-      opponent: opponentId,
+      type,
+      opponent: opponentId || null,
       stakeAmount,
-      message: 'Challenge created. User must sign transaction to activate.',
+      message: `${type === 'open' ? 'Open' : 'Direct P2P'} challenge created. User must sign transaction to activate.`,
     });
   } catch (error: any) {
     console.error('Failed to create P2P challenge:', error);

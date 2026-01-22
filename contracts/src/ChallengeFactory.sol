@@ -165,9 +165,10 @@ contract ChallengeFactory is ReentrancyGuard, Ownable {
     }
     
     /**
-     * @dev Create a P2P challenge between two users
+     * @dev Create a P2P challenge between two users or open challenge
      * User A (caller) stakes paymentToken
-     * User B (participant) must stake matching amount
+     * If participant = address(0): Open challenge (anyone can accept)
+     * If participant != address(0): Direct P2P (only participant can accept)
      */
     function createP2PChallenge(
         address participant,
@@ -176,8 +177,11 @@ contract ChallengeFactory is ReentrancyGuard, Ownable {
         uint256 pointsReward,
         string calldata metadataURI
     ) external nonReentrant returns (uint256) {
-        require(participant != address(0), "Invalid participant");
-        require(participant != msg.sender, "Cannot challenge yourself");
+        // For direct P2P: participant must be specified and not creator
+        // For open challenge: participant can be address(0)
+        if (participant != address(0)) {
+            require(participant != msg.sender, "Cannot challenge yourself");
+        }
         require(paymentToken != address(0), "Invalid payment token");
         require(!blacklistedTokens[paymentToken], "Token is blacklisted");
         require(stakeAmount > 0, "Stake must be > 0");
@@ -217,13 +221,23 @@ contract ChallengeFactory is ReentrancyGuard, Ownable {
     
     /**
      * @dev Accept a P2P challenge (User B stakes matching amount)
+     * For direct P2P: msg.sender must be the specified participant
+     * For open challenge: msg.sender can be anyone (becomes the participant)
      */
     function acceptP2PChallenge(uint256 challengeId) external nonReentrant {
         Challenge storage challenge = challenges[challengeId];
         
         require(challenge.challengeType == ChallengeType.P2P, "Not P2P challenge");
         require(challenge.status == ChallengeStatus.CREATED, "Challenge not open");
-        require(msg.sender == challenge.participant, "Not participant");
+        require(msg.sender != challenge.creator, "Creator cannot accept own challenge");
+        
+        // For direct P2P challenges: verify msg.sender is the specified participant
+        if (challenge.participant != address(0)) {
+            require(msg.sender == challenge.participant, "Not the specified participant");
+        } else {
+            // For open challenges: set msg.sender as the participant
+            challenge.participant = msg.sender;
+        }
         
         // Transfer participant's stake to escrow
         IERC20(challenge.paymentToken).safeTransferFrom(
