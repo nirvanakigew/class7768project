@@ -97,7 +97,7 @@ router.get('/public', async (req: Request, res: Response) => {
  */
 router.post('/create-admin', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const { stakeAmount, paymentToken, metadataURI, title, description, category } = req.body;
+    const { stakeAmount, paymentToken, metadataURI, title, description, category, dueDate } = req.body;
     const userId = req.user?.id;
 
     if (!userId) {
@@ -127,6 +127,12 @@ router.post('/create-admin', isAuthenticated, async (req: Request, res: Response
     const creationPoints = Math.min(50 + (stakeAmountUSD * 5), 500);
     console.log(`🎁 Challenge creator will earn ${creationPoints} Bantah Points`);
 
+    // Parse and validate dueDate (optional). Default to 24h from now if not provided.
+    const parsedDueDate = dueDate ? new Date(dueDate) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+    if (isNaN(parsedDueDate.getTime()) || parsedDueDate.getTime() <= Date.now()) {
+      return res.status(400).json({ error: 'Invalid dueDate. Must be a future date.' });
+    }
+
     // Create challenge in database first
     const dbChallenge = await db
       .insert(challenges)
@@ -138,6 +144,7 @@ router.post('/create-admin', isAuthenticated, async (req: Request, res: Response
         status: 'pending',
         adminCreated: true,
         challenger: userId,
+        dueDate: parsedDueDate,
         paymentTokenAddress: paymentToken,
         stakeAmountWei: BigInt(stakeAmount + '000000'), // 6 decimals for USDC/USDT
         onChainStatus: 'pending',
@@ -196,7 +203,7 @@ router.post('/create-admin', isAuthenticated, async (req: Request, res: Response
  */
 router.post('/create-p2p', isAuthenticated, async (req: Request, res: Response) => {
   try {
-    const { opponentId, stakeAmount, paymentToken, metadataURI, title, description, challengeType } = req.body;
+    const { opponentId, stakeAmount, paymentToken, metadataURI, title, description, challengeType, dueDate } = req.body;
     const userId = req.user?.id;
 
     if (!userId) {
@@ -226,6 +233,12 @@ router.post('/create-p2p', isAuthenticated, async (req: Request, res: Response) 
     const creationPoints = Math.min(50 + (stakeAmountUSD * 5), 500);
     console.log(`🎁 Challenge creator will earn ${creationPoints} Bantah Points`);
 
+    // Parse and validate dueDate (optional). Default to 24h from now if not provided.
+    const parsedDueDate = dueDate ? new Date(dueDate) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+    if (isNaN(parsedDueDate.getTime()) || parsedDueDate.getTime() <= Date.now()) {
+      return res.status(400).json({ error: 'Invalid dueDate. Must be a future date.' });
+    }
+
     // Create in database with pending blockchain status
     // User will sign and submit transaction client-side
     const dbChallenge = await db
@@ -239,6 +252,7 @@ router.post('/create-p2p', isAuthenticated, async (req: Request, res: Response) 
         adminCreated: false,
         challenger: userId,
         challenged: opponentId || null, // null for open challenges
+        dueDate: parsedDueDate,
         paymentTokenAddress: paymentToken,
         stakeAmountWei: BigInt(ethers.parseUnits(stakeAmount, 6).toString()),
         onChainStatus: 'pending', // Waiting for user to sign and submit

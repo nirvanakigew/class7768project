@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 
 import { registerRoutes } from "./routes";
+import { startExpiryScheduler } from './jobs/expireChallenges';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,6 +39,9 @@ app.use((_req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
+
+  // Start automatic expiry scheduler (cancels unaccepted P2P challenges; marks admin group challenges pending)
+  startExpiryScheduler();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

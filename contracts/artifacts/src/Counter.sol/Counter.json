@@ -1,0 +1,44 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "Counter",
+  "sourceName": "src/Counter.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "increment",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "number",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "newNumber",
+          "type": "uint256"
+        }
+      ],
+      "name": "setNumber",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x608080604052346100155760df908161001b8239f35b600080fdfe6080806040526004361015601257600080fd5b600090813560e01c9081633fb5c1cb1460915781638381f58a146075575063d09de08a14603e57600080fd5b346072578060031936011260725780546000198114605e57600101815580f35b634e487b7160e01b82526011600452602482fd5b80fd5b905034608d5781600319360112608d57602091548152f35b5080fd5b82346072576020366003190112607257600435815580f3fea26469706673582212204332fbae489105f9342bf7d421394d09a20f0a875c8a233b923b8809de3d70c164736f6c63430008140033",
+  "deployedBytecode": "0x6080806040526004361015601257600080fd5b600090813560e01c9081633fb5c1cb1460915781638381f58a146075575063d09de08a14603e57600080fd5b346072578060031936011260725780546000198114605e57600101815580f35b634e487b7160e01b82526011600452602482fd5b80fd5b905034608d5781600319360112608d57602091548152f35b5080fd5b82346072576020366003190112607257600435815580f3fea26469706673582212204332fbae489105f9342bf7d421394d09a20f0a875c8a233b923b8809de3d70c164736f6c63430008140033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

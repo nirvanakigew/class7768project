@@ -139,6 +139,7 @@ contract ChallengeFactory is ReentrancyGuard, Ownable {
         require(!blacklistedTokens[paymentToken], "Token is blacklisted");
         require(stakeAmount > 0, "Stake must be > 0");
         require(pointsReward > 0, "Points reward must be > 0");
+        require(pointsReward <= 500, "Points reward cannot exceed 500");
         
         uint256 challengeId = nextChallengeId++;
         
@@ -186,6 +187,7 @@ contract ChallengeFactory is ReentrancyGuard, Ownable {
         require(!blacklistedTokens[paymentToken], "Token is blacklisted");
         require(stakeAmount > 0, "Stake must be > 0");
         require(pointsReward > 0, "Points reward must be > 0");
+        require(pointsReward <= 500, "Points reward cannot exceed 500");
         
         // Transfer stake from User A to escrow
         IERC20(paymentToken).safeTransferFrom(msg.sender, address(stakeEscrow), stakeAmount);

@@ -327,3 +327,30 @@ export async function estimateGasForChallenge(
 }
 
 export { ethers };
+
+/**
+ * Release locked stakes for a challenge on-chain using ChallengeEscrow contract
+ * Admin signer must be owner or have permission to call releaseStakes
+ */
+export async function releaseStakesOnChain(challengeId: number, users: string[]) {
+  const client = getBlockchainClient();
+  try {
+    const escrowAddress = process.env.VITE_CHALLENGE_ESCROW_ADDRESS || process.env.CONTRACT_ESCROW_ADDRESS;
+    if (!escrowAddress) throw new Error('ChallengeEscrow contract address not configured');
+
+    const abi = ['function releaseStakes(uint256,address[])'];
+    const contract = new Contract(escrowAddress, abi, client.getAdminSigner());
+
+    const tx = await contract.releaseStakes(challengeId, users);
+    const receipt = await tx.wait();
+
+    return {
+      transactionHash: receipt.transactionHash,
+      blockNumber: receipt.blockNumber,
+      gasUsed: receipt.gasUsed ? receipt.gasUsed.toString() : undefined,
+    };
+  } catch (error) {
+    console.error('Failed to release stakes on-chain:', error);
+    throw error;
+  }
+}

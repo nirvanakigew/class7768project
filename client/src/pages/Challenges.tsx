@@ -102,6 +102,8 @@ export default function Challenges() {
     amount: 100,
     challengeType: 'open', // 'open' or 'direct'
     opponentId: null as string | null,
+    dueDate: '' as string, // ISO string
+    expirationHours: 24, // preset selector (hours)
   });
 
   // Listen for header search events dispatched from Navigation
@@ -218,6 +220,7 @@ export default function Challenges() {
           description: formData.description,
           stakeAmount: formData.amount.toString(),
           paymentToken: USDC_ADDRESS,
+          dueDate: formData.dueDate || null,
           metadataURI: 'ipfs://bafytest',
           challengeType: formData.challengeType,
         }),
@@ -261,7 +264,7 @@ export default function Challenges() {
       });
       queryClient.invalidateQueries({ queryKey: ["/api/challenges"] });
       setIsCreateDialogOpen(false);
-      setCreateFormData({ title: '', description: '', category: 'general', amount: 100, challengeType: 'open', opponentId: null });
+      setCreateFormData({ title: '', description: '', category: 'general', amount: 100, challengeType: 'open', opponentId: null, dueDate: '', expirationHours: 24 });
       setPreSelectedUser(null);
     },
     onError: (error: Error) => {
@@ -673,6 +676,36 @@ export default function Challenges() {
                   value={createFormData.amount}
                   onChange={(e) => setCreateFormData({...createFormData, amount: parseInt(e.target.value) || 0})}
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Expiry / Due Date</label>
+                <div className="flex gap-2">
+                  <Input
+                    type="datetime-local"
+                    value={createFormData.dueDate}
+                    onChange={(e) => setCreateFormData({...createFormData, dueDate: e.target.value})}
+                    className="flex-1"
+                  />
+                  <Select value={String(createFormData.expirationHours)} onValueChange={(val) => {
+                    const hours = parseInt(val);
+                    const dt = new Date();
+                    dt.setHours(dt.getHours() + hours);
+                    setCreateFormData(prev => ({ ...prev, expirationHours: hours, dueDate: dt.toISOString().slice(0,16) }));
+                  }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Preset" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1h</SelectItem>
+                      <SelectItem value="3">3h</SelectItem>
+                      <SelectItem value="6">6h</SelectItem>
+                      <SelectItem value="12">12h</SelectItem>
+                      <SelectItem value="24">24h</SelectItem>
+                      <SelectItem value="48">48h</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">Set a specific due date/time or pick a preset duration from now.</p>
               </div>
               <div className="flex gap-2 pt-2">
                 <Button 
