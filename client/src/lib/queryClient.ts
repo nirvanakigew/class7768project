@@ -27,7 +27,10 @@ export async function apiRequest(
   
   // Debug logging
   if (!authToken) {
-    console.warn('No auth token found for request to:', url);
+    console.warn('⚠️ No auth token found for request to:', url);
+    console.warn('  Cached token:', cachedAuthToken);
+  } else {
+    console.debug('✅ Auth token found for request:', url.split('/').pop());
   }
 
   const options: RequestInit = {

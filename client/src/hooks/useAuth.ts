@@ -32,6 +32,7 @@ export function useAuth() {
             if (token) {
               setAuthToken(token);
               console.debug('✅ Privy auth token cached for API requests');
+              console.debug('  Token length:', token.length, 'chars');
 
               // Check for stored referral code and report it to the backend
               const storedReferralCode = localStorage.getItem("referralCode");
@@ -43,6 +44,8 @@ export function useAuth() {
                   console.error('Failed to apply referral code:', err);
                 }
               }
+            } else {
+              console.warn('⚠️ getAccessToken returned null/undefined');
             }
           } catch (err) {
             console.error('Failed to get Privy access token:', err);

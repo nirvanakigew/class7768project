@@ -208,30 +208,16 @@ export default function Challenges() {
       }
 
       // Step 1: Store challenge in database
-      const response = await fetch('/api/challenges/create-p2p', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          opponentId: formData.challengeType === 'direct' ? preSelectedUser.id : null,
-          title: formData.title,
-          description: formData.description,
-          stakeAmount: formData.amount.toString(),
-          paymentToken: USDC_ADDRESS,
-          dueDate: formData.dueDate || null,
-          metadataURI: 'ipfs://bafytest',
-          challengeType: formData.challengeType,
-        }),
+      const data = await apiRequest('POST', '/api/challenges/create-p2p', {
+        opponentId: formData.challengeType === 'direct' ? preSelectedUser.id : null,
+        title: formData.title,
+        description: formData.description,
+        stakeAmount: formData.amount.toString(),
+        paymentToken: USDC_ADDRESS,
+        dueDate: formData.dueDate || null,
+        metadataURI: 'ipfs://bafytest',
+        challengeType: formData.challengeType,
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create challenge');
-      }
-
-      const data = await response.json();
 
       // Step 2: Sign and submit to blockchain
       const stakeWei = String(Math.floor(formData.amount * 1e6));

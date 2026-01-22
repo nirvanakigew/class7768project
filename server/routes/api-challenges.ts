@@ -12,6 +12,7 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { isAuthenticated } from '../auth';
+import { PrivyAuthMiddleware } from '../privyAuth';
 import { NotificationService, NotificationEvent, NotificationChannel, NotificationPriority } from '../notificationService';
 import {
   createAdminChallenge,
@@ -95,7 +96,7 @@ router.get('/public', async (req: Request, res: Response) => {
  * POST /api/challenges/create-admin
  * Create a new admin-created challenge (betting pool)
  */
-router.post('/create-admin', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/create-admin', PrivyAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { stakeAmount, paymentToken, metadataURI, title, description, category, dueDate } = req.body;
     const userId = req.user?.id;
@@ -201,12 +202,18 @@ router.post('/create-admin', isAuthenticated, async (req: Request, res: Response
  * - Open Challenge: opponentId null/undefined, anyone can accept
  * Note: User must sign the blockchain transaction client-side with their wallet
  */
-router.post('/create-p2p', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/create-p2p', PrivyAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { opponentId, stakeAmount, paymentToken, metadataURI, title, description, challengeType, dueDate } = req.body;
     const userId = req.user?.id;
 
+    console.log(`\n📨 POST /api/challenges/create-p2p`);
+    console.log(`  User ID: ${userId}`);
+    console.log(`  Auth Header: ${req.headers.authorization ? '✅ Present' : '❌ Missing'}`);
+    console.log(`  Challenge Type: ${challengeType}`);
+
     if (!userId) {
+      console.error('❌ User ID not found in request');
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
@@ -317,7 +324,7 @@ router.post('/create-p2p', isAuthenticated, async (req: Request, res: Response) 
  * POST /api/challenges/:id/join
  * Join an admin challenge (choose YES or NO side)
  */
-router.post('/:id/join', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/:id/join', PrivyAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { side } = req.body; // true for YES, false for NO
     const challengeId = parseInt(req.params.id);
@@ -422,7 +429,7 @@ router.post('/:id/join', isAuthenticated, async (req: Request, res: Response) =>
  * POST /api/challenges/:id/accept
  * Accept a P2P challenge (as the challenged user)
  */
-router.post('/:id/accept', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/:id/accept', PrivyAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const challengeId = parseInt(req.params.id);
     const userId = req.user?.id;
@@ -524,7 +531,7 @@ router.post('/:id/accept', isAuthenticated, async (req: Request, res: Response) 
  * GET /api/challenges/:id
  * Get challenge details with on-chain data
  */
-router.get('/:id', isAuthenticated, async (req: Request, res: Response) => {
+router.get('/:id', PrivyAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const challengeId = parseInt(req.params.id);
 
@@ -569,7 +576,7 @@ router.get('/:id', isAuthenticated, async (req: Request, res: Response) => {
  * GET /api/challenges
  * List challenges with filters
  */
-router.get('/', isAuthenticated, async (req: Request, res: Response) => {
+router.get('/', PrivyAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { status, adminCreated, limit = 50, offset = 0 } = req.query;
 
@@ -603,7 +610,7 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
  * GET /api/challenges/user/:userId
  * Get user's challenges
  */
-router.get('/user/:userId', isAuthenticated, async (req: Request, res: Response) => {
+router.get('/user/:userId', PrivyAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
 
@@ -635,7 +642,7 @@ router.get('/user/:userId', isAuthenticated, async (req: Request, res: Response)
  * Accept an open P2P challenge (first user to join becomes opponent)
  * Calls blockchain: joinOpenP2PChallenge()
  */
-router.post('/:challengeId/accept-open', isAuthenticated, async (req: Request, res: Response) => {
+router.post('/:challengeId/accept-open', PrivyAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { challengeId } = req.params;
     const userId = req.user?.id;
@@ -808,7 +815,7 @@ router.post('/:challengeId/accept-open', isAuthenticated, async (req: Request, r
  * Submit evidence for a P2P challenge
  * Users can submit proof to support their position before or after dispute
  */
-router.post('/:challengeId/evidence', isAuthenticated, upload.array('files', 5), async (req: Request, res: Response) => {
+router.post('/:challengeId/evidence', PrivyAuthMiddleware, upload.array('files', 5), async (req: Request, res: Response) => {
   try {
     const { challengeId } = req.params;
     const userId = req.user?.id;
